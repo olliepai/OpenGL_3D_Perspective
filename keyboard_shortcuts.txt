@@ -1,0 +1,24 @@
+{  
+    "key": "cmd+r",           
+    "command": "workbench.action.tasks.runTask", 
+    "args": "run"
+},
+{ 
+    "key": "cmd+b",           
+    "command": "workbench.action.tasks.runTask", 
+    "args": "build and run" 
+},
+{ 
+    "key": "cmd+shift+b",           
+    "command": "workbench.action.tasks.runTask", 
+    "args": "build only" 
+},
+{
+    "key": "cmd+m",
+    "command": "workbench.action.tasks.runTask",
+    "args": "metal compile" 
+},
+{
+    "key": "cmd+k",
+    "command": "workbench.action.terminal.kill"
+}
