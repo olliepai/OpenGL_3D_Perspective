@@ -37,6 +37,10 @@ int main(int argc, char** argv){
     int viewMatId = glGetUniformLocation(shader, "viewMatrix");
 
 
+    glEnable(GL_CULL_FACE);
+    glFrontFace(GL_CCW);
+    glCullFace(GL_BACK);
+
     Camera camera;
     camera.forward = vec3(0, 0, 1);
     camera.right = vec3(1, 0, 0);
@@ -52,9 +56,53 @@ int main(int argc, char** argv){
     glUniformMatrix4fv(viewMatId, 1, false, viewMatrix.m[0]);
 
     float verts[] = {
-        -1, -1, 0, 0, 1, 
-        0, 1, 0, 0.5, 0,
-        1, -1, 0, 1, 1,
+        // front
+        -1, 1, 1,        0, 0,
+        -1, -1, 1,      0, 1, 
+        1, -1, 1,       1, 1,
+        1, -1, 1,       1, 1,
+        1, 1, 1,        0, 1,
+        -1, 1, 1,       0, 0,
+
+        // back
+        -1, -1, -1,        0, 0,
+        -1, 1, -1,      0, 1, 
+        1, 1, -1,       1, 1,
+        1, 1, -1,       1, 1,
+        1, -1, -1,        0, 1,
+        -1, -1, -1,       0, 0,
+
+        // top
+        -1, 1, -1,        0, 0,
+        -1, 1, 1,      0, 1, 
+        1, 1, 1,       1, 1,
+        1, 1, 1,       1, 1,
+        1, 1, -1,        0, 1,
+        -1, 1, -1,       0, 0,
+
+        // bottom
+        -1, -1, 1,        0, 0,
+        -1, -1, -1,      0, 1, 
+        1, -1, -1,       1, 1,
+        1, -1, -1,       1, 1,
+        1, -1, 1,        0, 1,
+        -1, -1, 1,       0, 0,
+
+        // left
+        -1, 1, -1,        0, 0,
+        -1, -1, -1,      0, 1, 
+        -1, -1, 1,       1, 1,
+        -1, -1, 1,       1, 1,
+        -1, 1, 1,        0, 1,
+        -1, 1, -1,       0, 0,
+
+        // right
+        1, -1, -1,        0, 0,
+        1, 1, -1,      0, 1, 
+        1, 1, 1,       1, 1,
+        1, 1, 1,       1, 1,
+        1, -1, 1,        0, 1,
+        1, -1, -1,       0, 0
     };
 
     unsigned int vao, vbo;
@@ -84,6 +132,7 @@ int main(int argc, char** argv){
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, texture); 
 
     glClearColor(0, 0.5, 1, 1);
+    glEnable(GL_DEPTH_TEST);
 
     mat4 modelMatrix;
     modelMatrix.setIdentity();
@@ -184,7 +233,7 @@ int main(int argc, char** argv){
                 }
             }
         }
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         camera.position -= vec3(camera.forward.x * camMoveSpeed * moveForward,
                                 camera.forward.y * camMoveSpeed * moveForward,
@@ -202,6 +251,14 @@ int main(int argc, char** argv){
                                 camera.right.y * camMoveSpeed * moveLeft,
                                 camera.right.z * camMoveSpeed * moveLeft);
 
+        camera.position += vec3(camera.up.x * camMoveSpeed * moveUp,
+                                camera.up.y * camMoveSpeed * moveUp,
+                                camera.up.z * camMoveSpeed * moveUp);
+
+        camera.position -= vec3(camera.up.x * camMoveSpeed * moveDown,
+                                camera.up.y * camMoveSpeed * moveDown,
+                                camera.up.z * camMoveSpeed * moveDown);
+
         camera.orientation.rotate(camera.right, -camRotateSpeed * pitchUp);
         camera.orientation.rotate(camera.right, camRotateSpeed * pitchDown);
         camera.orientation.rotate(camera.up, -camRotateSpeed * yawLeft);
@@ -218,7 +275,7 @@ int main(int argc, char** argv){
         viewMatrix = multiply(quatToMat4(camera.orientation), viewMatrix);
         glUniformMatrix4fv(viewMatId, 1, false, viewMatrix.m[0]);
 
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
 
         SDL_GL_SwapWindow(window);
     }
