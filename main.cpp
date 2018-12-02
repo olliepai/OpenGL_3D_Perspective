@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 #include "shader_compiler.h"
+#include "graphics_math.h"
 
 #define GRAVITY -1
 #define MAX_TRIANGLES 4096
@@ -16,46 +17,6 @@ struct Triangle {
     float position[2];
     float velocity[2];
 };
-
-void setIdentityMatrix(float matrix[4][4]){
-    for(int i = 0; i < 4; i++){
-        for(int j = 0; j < 4; j++){
-            if(i == j){
-                matrix[i][j] = 1;
-            }else{
-                matrix[i][j] = 0;
-            }
-        }
-    }
-}
-
-void setOrthoganalProjectionMatrix(float matrix[4][4], float left, float right, float bottom, float top){
-    matrix[0][0] = 2 / (right - left);
-    matrix[1][1] = 2 / (top - bottom);
-    matrix[3][0] = -((right + left) / (right - left));
-    matrix[3][1] = -((top + bottom) / (top - bottom));
-}
-
-void setPerspectiveProjectionMatrix(float matrix[4][4], float fov, float aspect, float near, float far){
-  matrix[0][0] = 1 / (aspect * tan(fov / 2));
-  matrix[1][1] = 1 / tan(fov / 2);
-  matrix[2][2] = -((far + near) / (far - near));
-  matrix[2][3] = (2 * far * near) / (far - near);
-  matrix[3][2] = 1;
-}
-
-
-void translateMatrix2D(float matrix[4][4], float newPos[2]){
-    matrix[3][0] += newPos[0];
-    matrix[3][1] += newPos[1];
-}
-
-void scaleMatrix2D(float matrix[4][4], float newScale[2]){
-    matrix[0][0] = newScale[0];
-    matrix[1][1] = newScale[1];
-}
-
-
 
 int main(int argc, char** argv){
     srand(time(0));
@@ -73,18 +34,27 @@ int main(int argc, char** argv){
 
     int modelMatId = glGetUniformLocation(shader, "modelMatrix");
     int projectionMatId = glGetUniformLocation(shader, "projectionMatrix");
+    int viewMatId = glGetUniformLocation(shader, "viewMatrix");
 
-    float projectionMatrix[4][4];
-    setIdentityMatrix(projectionMatrix);
-    //setOrthoganalProjectionMatrix(projectionMatrix, 0, WIDTH, 0, HEIGHT); 
-    setPerspectiveProjectionMatrix(projectionMatrix, 70.0, (float)WIDTH/(float)HEIGHT, 0.001, 1000.0);
-    
-    glUniformMatrix4fv(projectionMatId, 1, false, projectionMatrix[0]);
+
+    Camera camera;
+    camera.forward = vec3(0, 0, 1);
+    camera.right = vec3(1, 0, 0);
+    camera.up = vec3(0, 1, 0);
+    camera.orientation = quat(0, 0, 0, 1);
+    camera.setPerspectiveProjection(70.0, (float)WIDTH/(float)HEIGHT, 0.001, 1000.0);
+    glUniformMatrix4fv(projectionMatId, 1, false, camera.projection.m[0]);
+
+    mat4 viewMatrix;
+    viewMatrix.setIdentity();
+    camera.position = vec3(0, 0, -10);
+    viewMatrix.translate(camera.position);
+    glUniformMatrix4fv(viewMatId, 1, false, viewMatrix.m[0]);
 
     float verts[] = {
-        -1, -1, 0, 1, 
-        0, 1, 0.5, 0,
-        1, -1, 1, 1,
+        -1, -1, 0, 0, 1, 
+        0, 1, 0, 0.5, 0,
+        1, -1, 0, 1, 1,
     };
 
     unsigned int vao, vbo;
@@ -94,9 +64,9 @@ int main(int argc, char** argv){
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
 
-    glVertexAttribPointer(postionId, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), 0);
+    glVertexAttribPointer(postionId, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), 0);
     glEnableVertexAttribArray(postionId);
-    glVertexAttribPointer(texCoordId, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+    glVertexAttribPointer(texCoordId, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(texCoordId);
 
     unsigned char texture[] = {
@@ -113,19 +83,34 @@ int main(int argc, char** argv){
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, texture); 
 
-    glClearColor(1, 1, 0, 1);
+    glClearColor(0, 0.5, 1, 1);
 
+    mat4 modelMatrix;
+    modelMatrix.setIdentity();
+    modelMatrix.translate(vec3(0, 0, 0));
 
-    float modelMatrix[4][4];
-    setIdentityMatrix(modelMatrix);
-    modelMatrix[0][0] = 10;
-    modelMatrix[1][1] = 10;
-    modelMatrix[2][3] = 40;
     float p = 0.0;
-    glUniformMatrix4fv(modelMatId, 1, false, &modelMatrix[0][0]);
+    glUniformMatrix4fv(modelMatId, 1, false, modelMatrix.m[0]);
 
     SDL_Event event;
     bool isRunning = true;
+
+    bool moveForward = false;
+    bool moveBack = false;
+    bool moveUp = false;
+    bool moveDown = false;
+    bool moveRight = false;
+    bool moveLeft = false;
+    bool pitchUp = false;
+    bool pitchDown = false;
+    bool rollLeft = false;
+    bool rollRight = false;
+    bool yawLeft = false;
+    bool yawRight = false;
+
+    float camMoveSpeed = 0.1;
+    float camRotateSpeed = 0.01;
+
     while(isRunning){
         while(SDL_PollEvent(&event)){
             switch(event.type){
@@ -137,17 +122,58 @@ int main(int argc, char** argv){
                     if(event.key.keysym.sym == SDLK_ESCAPE){
                         isRunning = false;
                     }else if(event.key.keysym.sym == SDLK_UP){ 
-                        modelMatrix[2][3]++;
-                        glUniformMatrix4fv(modelMatId, 1, false, &modelMatrix[0][0]);
+                        pitchUp = true;
                     }else if(event.key.keysym.sym == SDLK_DOWN){
-                        modelMatrix[2][3]--;
-                        glUniformMatrix4fv(modelMatId, 1, false, &modelMatrix[0][0]);
+                        pitchDown = true;
                     }else if(event.key.keysym.sym == SDLK_LEFT){
-                        modelMatrix[3][0]--;
-                        glUniformMatrix4fv(modelMatId, 1, false, &modelMatrix[0][0]);
+                        yawLeft = true;
                     }else if(event.key.keysym.sym == SDLK_RIGHT){
-                        modelMatrix[3][0]++;
-                        glUniformMatrix4fv(modelMatId, 1, false, &modelMatrix[0][0]);
+                        yawRight = true;
+                    }else if(event.key.keysym.sym == SDLK_w){
+                        moveForward = true;
+                    }else if(event.key.keysym.sym == SDLK_s){
+                        moveBack = true;
+                    }else if(event.key.keysym.sym == SDLK_a){
+                        moveLeft = true;
+                    }else if(event.key.keysym.sym == SDLK_d){
+                        moveRight = true;
+                    }else if(event.key.keysym.sym == SDLK_q){
+                        rollLeft = true;
+                    }else if(event.key.keysym.sym == SDLK_e){
+                        rollRight = true;
+                    }else if(event.key.keysym.sym == SDLK_r){
+                        moveUp = true;
+                    }else if(event.key.keysym.sym == SDLK_f){
+                        moveDown = true;
+                    }
+
+                    break;
+                }
+                case SDL_KEYUP :{
+                    if(event.key.keysym.sym == SDLK_UP){ 
+                        pitchUp = false;
+                    }else if(event.key.keysym.sym == SDLK_DOWN){
+                        pitchDown = false;
+                    }else if(event.key.keysym.sym == SDLK_LEFT){
+                        yawLeft = false;
+                    }else if(event.key.keysym.sym == SDLK_RIGHT){
+                        yawRight = false;
+                    }else if(event.key.keysym.sym == SDLK_w){
+                        moveForward = false;
+                    }else if(event.key.keysym.sym == SDLK_s){
+                        moveBack = false;
+                    }else if(event.key.keysym.sym == SDLK_a){
+                        moveLeft = false;
+                    }else if(event.key.keysym.sym == SDLK_d){
+                        moveRight = false;
+                    }else if(event.key.keysym.sym == SDLK_q){
+                        rollLeft = false;
+                    }else if(event.key.keysym.sym == SDLK_e){
+                        rollRight = false;
+                    }else if(event.key.keysym.sym == SDLK_r){
+                        moveUp = false;
+                    }else if(event.key.keysym.sym == SDLK_f){
+                        moveDown = false;
                     }
                     break;
                 }
@@ -160,7 +186,37 @@ int main(int argc, char** argv){
         }
         glClear(GL_COLOR_BUFFER_BIT);
 
-        
+        camera.position -= vec3(camera.forward.x * camMoveSpeed * moveForward,
+                                camera.forward.y * camMoveSpeed * moveForward,
+                                camera.forward.z * camMoveSpeed * moveForward);
+
+        camera.position += vec3(camera.forward.x * camMoveSpeed * moveBack,
+                                camera.forward.y * camMoveSpeed * moveBack,
+                                camera.forward.z * camMoveSpeed * moveBack);
+
+        camera.position -= vec3(camera.right.x * camMoveSpeed * moveRight,
+                                camera.right.y * camMoveSpeed * moveRight,
+                                camera.right.z * camMoveSpeed * moveRight);
+
+        camera.position += vec3(camera.right.x * camMoveSpeed * moveLeft,
+                                camera.right.y * camMoveSpeed * moveLeft,
+                                camera.right.z * camMoveSpeed * moveLeft);
+
+        camera.orientation.rotate(camera.right, -camRotateSpeed * pitchUp);
+        camera.orientation.rotate(camera.right, camRotateSpeed * pitchDown);
+        camera.orientation.rotate(camera.up, -camRotateSpeed * yawLeft);
+        camera.orientation.rotate(camera.up, camRotateSpeed * yawRight);
+        camera.orientation.rotate(camera.forward, camRotateSpeed * rollLeft);
+        camera.orientation.rotate(camera.forward, -camRotateSpeed * rollRight);
+
+        camera.forward = getForwardVector(viewMatrix);
+        camera.up = getUpVector(viewMatrix);
+        camera.right = getRightVector(viewMatrix);
+
+        viewMatrix.setIdentity();
+        viewMatrix.translate(camera.position);
+        viewMatrix = multiply(quatToMat4(camera.orientation), viewMatrix);
+        glUniformMatrix4fv(viewMatId, 1, false, viewMatrix.m[0]);
 
         glDrawArrays(GL_TRIANGLES, 0, 3);
 
